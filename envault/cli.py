@@ -1,133 +1,129 @@
-"""Command-line interface for envault.
+"""Command-line interface for envault."""
 
-Provides commands to lock (encrypt) and unlock (decrypt) .env files,
-as well as initialise a vault directory for git-based syncing.
-"""
-
-import os
-import sys
 import argparse
 import getpass
+import sys
+from pathlib import Path
 
 from envault.vault import lock, unlock
+from envault.sync import push, pull, SyncError
 
 
-DEFAULT_ENV_FILE = ".env"
-DEFAULT_VAULT_FILE = ".env.vault"
+# ---------------------------------------------------------------------------
+# Command handlers
+# ---------------------------------------------------------------------------
 
-
-def cmd_lock(args: argparse.Namespace) -> int:
-    """Encrypt a plaintext .env file and write the vault file."""
-    env_path = args.env_file
-    vault_path = args.vault_file
-
-    if not os.path.exists(env_path):
-        print(f"error: env file not found: {env_path}", file=sys.stderr)
-        return 1
-
+def cmd_lock(args: argparse.Namespace) -> None:
+    """Encrypt a .env file into a vault file."""
     passphrase = _read_passphrase(confirm=True)
+    src = Path(args.env_file)
+    dst = Path(args.output) if args.output else src.with_suffix(".env.enc")
+    lock(src, dst, passphrase)
+    print(f"[envault] Locked {src} -> {dst}")
 
-    try:
-        lock(env_path, vault_path, passphrase)
-    except Exception as exc:  # pragma: no cover
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-
-    print(f"Locked '{env_path}' → '{vault_path}'")
-    return 0
+    if args.push:
+        try:
+            push(dst, message=f"chore: lock {dst.name}")
+            print(f"[envault] Pushed {dst} to remote.")
+        except SyncError as exc:
+            print(f"[envault] Warning: push failed: {exc}", file=sys.stderr)
 
 
-def cmd_unlock(args: argparse.Namespace) -> int:
-    """Decrypt a vault file and restore the plaintext .env file."""
-    vault_path = args.vault_file
-    env_path = args.env_file
-
-    if not os.path.exists(vault_path):
-        print(f"error: vault file not found: {vault_path}", file=sys.stderr)
-        return 1
-
+def cmd_unlock(args: argparse.Namespace) -> None:
+    """Decrypt a vault file back to a .env file."""
     passphrase = _read_passphrase(confirm=False)
+    src = Path(args.vault_file)
+    dst = Path(args.output) if args.output else src.with_suffix("").with_suffix(".env")
+    unlock(src, dst, passphrase)
+    print(f"[envault] Unlocked {src} -> {dst}")
 
+
+def cmd_push(args: argparse.Namespace) -> None:
+    """Push an already-locked vault file to the remote git repository."""
+    vault_file = Path(args.vault_file)
+    if not vault_file.exists():
+        print(f"[envault] Error: {vault_file} does not exist.", file=sys.stderr)
+        sys.exit(1)
     try:
-        unlock(vault_path, env_path, passphrase)
-    except ValueError as exc:
-        print(f"error: decryption failed — wrong passphrase? ({exc})", file=sys.stderr)
-        return 1
-    except Exception as exc:  # pragma: no cover
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-
-    print(f"Unlocked '{vault_path}' → '{env_path}'")
-    return 0
-
-
-def _read_passphrase(confirm: bool) -> str:
-    """Prompt the user for a passphrase, optionally asking twice for confirmation."""
-    # Allow passphrase injection via environment variable for non-interactive use
-    env_pass = os.environ.get("ENVAULT_PASSPHRASE")
-    if env_pass is not None:
-        return env_pass
-
-    passphrase = getpass.getpass("Passphrase: ")
-    if not passphrase:
-        print("error: passphrase must not be empty", file=sys.stderr)
+        push(vault_file, message=args.message or f"chore: update {vault_file.name}")
+        print(f"[envault] Pushed {vault_file} to remote.")
+    except SyncError as exc:
+        print(f"[envault] Push failed: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    if confirm:
-        confirm_pass = getpass.getpass("Confirm passphrase: ")
-        if passphrase != confirm_pass:
-            print("error: passphrases do not match", file=sys.stderr)
-            sys.exit(1)
 
+def cmd_pull(args: argparse.Namespace) -> None:
+    """Pull the latest vault file from the remote git repository."""
+    repo_root = Path(args.repo_dir) if args.repo_dir else Path.cwd()
+    try:
+        pull(repo_root)
+        print(f"[envault] Pulled latest changes into {repo_root}.")
+    except SyncError as exc:
+        print(f"[envault] Pull failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _read_passphrase(confirm: bool = False) -> str:
+    passphrase = getpass.getpass("Passphrase: ")
+    if confirm:
+        second = getpass.getpass("Confirm passphrase: ")
+        if passphrase != second:
+            print("[envault] Error: passphrases do not match.", file=sys.stderr)
+            sys.exit(1)
     return passphrase
 
 
+# ---------------------------------------------------------------------------
+# Parser
+# ---------------------------------------------------------------------------
+
 def build_parser() -> argparse.ArgumentParser:
-    """Construct and return the top-level argument parser."""
     parser = argparse.ArgumentParser(
         prog="envault",
-        description="Encrypt and sync .env secrets via a git repo.",
+        description="Lightweight .env secret manager with git sync.",
     )
-    parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0"
-    )
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    sub = parser.add_subparsers(dest="command", metavar="<command>")
-    sub.required = True
+    # lock
+    p_lock = sub.add_parser("lock", help="Encrypt a .env file.")
+    p_lock.add_argument("env_file", help="Path to the plaintext .env file.")
+    p_lock.add_argument("-o", "--output", help="Destination vault file path.")
+    p_lock.add_argument(
+        "--push", action="store_true", help="Push the vault file after locking."
+    )
+    p_lock.set_defaults(func=cmd_lock)
 
-    # ---- lock ----
-    lock_p = sub.add_parser("lock", help="Encrypt .env → .env.vault")
-    lock_p.add_argument(
-        "--env-file", default=DEFAULT_ENV_FILE,
-        metavar="FILE", help=f"Plaintext env file (default: {DEFAULT_ENV_FILE})"
-    )
-    lock_p.add_argument(
-        "--vault-file", default=DEFAULT_VAULT_FILE,
-        metavar="FILE", help=f"Output vault file (default: {DEFAULT_VAULT_FILE})"
-    )
-    lock_p.set_defaults(func=cmd_lock)
+    # unlock
+    p_unlock = sub.add_parser("unlock", help="Decrypt a vault file.")
+    p_unlock.add_argument("vault_file", help="Path to the encrypted vault file.")
+    p_unlock.add_argument("-o", "--output", help="Destination .env file path.")
+    p_unlock.set_defaults(func=cmd_unlock)
 
-    # ---- unlock ----
-    unlock_p = sub.add_parser("unlock", help="Decrypt .env.vault → .env")
-    unlock_p.add_argument(
-        "--vault-file", default=DEFAULT_VAULT_FILE,
-        metavar="FILE", help=f"Vault file to decrypt (default: {DEFAULT_VAULT_FILE})"
+    # push
+    p_push = sub.add_parser("push", help="Push vault file to remote git repo.")
+    p_push.add_argument("vault_file", help="Path to the encrypted vault file.")
+    p_push.add_argument("-m", "--message", help="Custom commit message.", default="")
+    p_push.set_defaults(func=cmd_push)
+
+    # pull
+    p_pull = sub.add_parser("pull", help="Pull latest vault from remote git repo.")
+    p_pull.add_argument(
+        "--repo-dir", dest="repo_dir", help="Repository root (default: cwd)."
     )
-    unlock_p.add_argument(
-        "--env-file", default=DEFAULT_ENV_FILE,
-        metavar="FILE", help=f"Output env file (default: {DEFAULT_ENV_FILE})"
-    )
-    unlock_p.set_defaults(func=cmd_unlock)
+    p_pull.set_defaults(func=cmd_pull)
 
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Entry point for the envault CLI."""
+def main() -> None:  # pragma: no cover
     parser = build_parser()
-    args = parser.parse_args(argv)
-    return args.func(args)
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":  # pragma: no cover
-    sys.exit(main())
+    main()
