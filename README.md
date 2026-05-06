@@ -38,6 +38,12 @@ envault pull --file .env
 envault rotate-key
 ```
 
+**View diff between local and remote secrets:**
+
+```bash
+envault diff --file .env
+```
+
 Envault stores an encrypted copy of your secrets in a connected git repository. Each machine decrypts locally using a master key stored in `~/.envault/keyring`. Your plaintext secrets never leave your machine unencrypted.
 
 ```
