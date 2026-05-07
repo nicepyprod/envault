@@ -67,6 +67,15 @@ def test_cmd_rotate_keyboard_interrupt(prepared_vault):
     assert rc == 1
 
 
+def test_cmd_rotate_wrong_old_passphrase(prepared_vault):
+    """Rotating with an incorrect current passphrase should fail with rc=1."""
+    vault, env, tmp_path = prepared_vault
+    side_effects = ["wrong_old_pass", NEW_PASS, NEW_PASS]
+    with patch("envault.cli_rotate._read_passphrase", side_effect=side_effects):
+        rc = cmd_rotate(_ns(str(vault), str(tmp_path / ".env")))
+    assert rc == 1
+
+
 def test_register_subcommands_adds_rotate():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers()
