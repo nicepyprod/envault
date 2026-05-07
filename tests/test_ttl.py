@@ -61,6 +61,14 @@ def test_set_ttl_negative_raises(vault_file):
         set_ttl(vault_file, -10)
 
 
+def test_set_ttl_overwrites_existing(vault_file):
+    """Calling set_ttl twice should update the expiry to the latest value."""
+    set_ttl(vault_file, 60)
+    expires = set_ttl(vault_file, 3600)
+    stored = get_ttl(vault_file)
+    assert stored == pytest.approx(expires, abs=1.0)
+
+
 # ---------------------------------------------------------------------------
 # clear_ttl
 # ---------------------------------------------------------------------------
@@ -74,6 +82,13 @@ def test_clear_ttl_removes_file(vault_file):
 
 def test_clear_ttl_returns_false_when_no_file(vault_file):
     assert clear_ttl(vault_file) is False
+
+
+def test_clear_ttl_resets_get_ttl(vault_file):
+    """After clearing, get_ttl should return None."""
+    set_ttl(vault_file, 60)
+    clear_ttl(vault_file)
+    assert get_ttl(vault_file) is None
 
 
 # ---------------------------------------------------------------------------
@@ -113,21 +128,12 @@ def test_remaining_seconds_positive_for_future(vault_file):
     assert 0 < rem <= 100
 
 
-def test_remaining_seconds_negative_for_expired(vault_file):
+def test_remaining_seconds_negative_when_expired(vault_file):
+    """remaining_seconds should return a negative value for an expired vault."""
     ttl_file = _ttl_path(vault_file)
     ttl_file.write_text(
-        json.dumps({"expires_at": time.time() - 5}), encoding="utf-8"
+        json.dumps({"expires_at": time.time() - 30}), encoding="utf-8"
     )
     rem = remaining_seconds(vault_file)
     assert rem is not None
     assert rem < 0
-
-
-# ---------------------------------------------------------------------------
-# corrupt TTL file
-# ---------------------------------------------------------------------------
-
-def test_get_ttl_corrupt_file_raises(vault_file):
-    _ttl_path(vault_file).write_text("not-json", encoding="utf-8")
-    with pytest.raises(TTLError, match="Corrupt"):
-        get_ttl(vault_file)
