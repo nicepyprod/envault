@@ -17,6 +17,19 @@ _STATUS_SYMBOLS = {
 }
 
 
+def _format_entry(entry) -> str:
+    """Return a human-readable line for a single diff entry."""
+    sym = _STATUS_SYMBOLS[entry.status]
+    if entry.status == "added":
+        return f"{sym} {entry.key}=(none) -> {entry.new_value!r}"
+    elif entry.status == "removed":
+        return f"{sym} {entry.key}={entry.old_value!r} -> (none)"
+    elif entry.status == "changed":
+        return f"{sym} {entry.key}={entry.old_value!r} -> {entry.new_value!r}"
+    else:
+        return f"{sym} {entry.key}={entry.old_value!r}"
+
+
 def cmd_diff(args: argparse.Namespace) -> int:
     passphrase = _read_passphrase("Passphrase: ")
     if not passphrase:
@@ -50,15 +63,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
     for entry in entries:
         if entry.status == "unchanged" and not show_unchanged:
             continue
-        sym = _STATUS_SYMBOLS[entry.status]
-        if entry.status == "added":
-            print(f"{sym} {entry.key}=(none) -> {entry.new_value!r}")
-        elif entry.status == "removed":
-            print(f"{sym} {entry.key}={entry.old_value!r} -> (none)")
-        elif entry.status == "changed":
-            print(f"{sym} {entry.key}={entry.old_value!r} -> {entry.new_value!r}")
-        else:
-            print(f"{sym} {entry.key}={entry.old_value!r}")
+        print(_format_entry(entry))
 
     return 0
 
