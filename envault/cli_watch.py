@@ -10,6 +10,7 @@ from envault.env_watch import WatchError, WatchEvent, watch
 
 
 def _format_event(ev: WatchEvent) -> str:
+    """Format a single WatchEvent into a human-readable string."""
     if ev.kind == "added":
         return f"  [+] {ev.key} = {ev.new_value}"
     if ev.kind == "removed":
@@ -19,7 +20,15 @@ def _format_event(ev: WatchEvent) -> str:
     return f"  [=] {ev.key}"
 
 
+def _on_change(env_path: Path, events: list[WatchEvent]) -> None:
+    """Print a summary of detected changes to stdout."""
+    print(f"\n{len(events)} change(s) detected in {env_path}:")
+    for ev in events:
+        print(_format_event(ev))
+
+
 def cmd_watch(args: argparse.Namespace) -> int:
+    """Entry point for the 'watch' subcommand."""
     env_path = Path(args.env_file)
 
     if not env_path.exists():
@@ -29,13 +38,12 @@ def cmd_watch(args: argparse.Namespace) -> int:
     interval: float = args.interval
     print(f"Watching {env_path} (interval={interval}s) — press Ctrl+C to stop.")
 
-    def on_change(events: list[WatchEvent]) -> None:
-        print(f"\n{len(events)} change(s) detected in {env_path}:")
-        for ev in events:
-            print(_format_event(ev))
-
     try:
-        watch(env_path, callback=on_change, interval=interval)
+        watch(
+            env_path,
+            callback=lambda events: _on_change(env_path, events),
+            interval=interval,
+        )
     except WatchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
