@@ -9,6 +9,13 @@ from envault.cli import _read_passphrase
 from envault.env_compare import CompareError, compare_vaults
 
 
+def _print_diff_section(label: str, keys: list[str], marker: str) -> None:
+    """Print a labelled section of the diff output."""
+    print(f"  {label} ({len(keys)}):")
+    for k in keys:
+        print(f"    {marker} {k}")
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     """Compare two vault files and print a human-readable diff."""
     vault_a = Path(args.vault_a)
@@ -37,21 +44,13 @@ def cmd_compare(args: argparse.Namespace) -> int:
 
     print(f"Comparing {vault_a} <-> {vault_b}")
     if result.only_in_a:
-        print(f"  Only in A ({len(result.only_in_a)}):")
-        for k in result.only_in_a:
-            print(f"    - {k}")
+        _print_diff_section(f"Only in A", result.only_in_a, "-")
     if result.only_in_b:
-        print(f"  Only in B ({len(result.only_in_b)}):")
-        for k in result.only_in_b:
-            print(f"    + {k}")
+        _print_diff_section(f"Only in B", result.only_in_b, "+")
     if result.changed:
-        print(f"  Changed ({len(result.changed)}):")
-        for k in result.changed:
-            print(f"    ~ {k}")
+        _print_diff_section("Changed", result.changed, "~")
     if not args.hide_unchanged and result.unchanged:
-        print(f"  Unchanged ({len(result.unchanged)}):")
-        for k in result.unchanged:
-            print(f"    = {k}")
+        _print_diff_section("Unchanged", result.unchanged, "=")
 
     return 0
 
