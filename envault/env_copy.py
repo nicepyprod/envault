@@ -28,6 +28,12 @@ def _dict_to_env(data: dict[str, str]) -> str:
     return "\n".join(f"{k}={v}" for k, v in data.items()) + "\n"
 
 
+def _load_vault_data(vault_path: Path, passphrase: str) -> dict[str, str]:
+    """Unlock the vault and return its contents as a key/value dict."""
+    plaintext = unlock(vault_path, passphrase)
+    return _parse_env_dict(plaintext)
+
+
 def copy_key(
     vault_path: Path,
     passphrase: str,
@@ -41,8 +47,7 @@ def copy_key(
     if src_key == dst_key:
         raise CopyError("Source and destination keys must differ.")
 
-    plaintext = unlock(vault_path, passphrase)
-    data = _parse_env_dict(plaintext)
+    data = _load_vault_data(vault_path, passphrase)
 
     if src_key not in data:
         raise CopyError(f"Key not found in vault: {src_key!r}")
@@ -65,7 +70,6 @@ def rename_key(
     """Rename *src_key* to *dst_key* inside the vault (src_key is removed)."""
     copy_key(vault_path, passphrase, src_key, dst_key, overwrite=overwrite)
 
-    plaintext = unlock(vault_path, passphrase)
-    data = _parse_env_dict(plaintext)
+    data = _load_vault_data(vault_path, passphrase)
     del data[src_key]
     lock(vault_path, _dict_to_env(data), passphrase)
