@@ -13,6 +13,10 @@ def cmd_fmt(args: argparse.Namespace) -> int:
     """Normalise the formatting of a vault file in-place."""
     vault_path = Path(args.vault)
 
+    if not vault_path.exists():
+        print(f"error: vault file not found: {vault_path}", file=sys.stderr)
+        return 1
+
     passphrase = _read_passphrase("Passphrase: ")
     if not passphrase:
         print("error: passphrase must not be empty", file=sys.stderr)
